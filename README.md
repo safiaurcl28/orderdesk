@@ -1,62 +1,70 @@
 # OrderDesk
 
-A customer support backend for a restaurant's online orders, built so that an AI agent can work with it safely.
+A support backend for a restaurant's online orders, where an AI agent can help handle customer complaints without being trusted blindly.
 
-Customers send a message ("my order never arrived", "I ordered vegan and there is cheese in it"). OrderDesk stores it, sorts it by urgency and category (with the Claude API, validated, with a rule-based fallback), and hands anything urgent (allergens, orders that never arrived) to restaurant staff. An **MCP server** exposes the tickets to an AI agent as a small set of tools, and an **n8n workflow** connects incoming messages to the API.
+A customer sends a message like "my order never arrived" or "I ordered vegan and there's cheese in it". OrderDesk saves it as a ticket, sorts it by urgency and category, and sends the urgent ones (allergens, orders that never showed up) straight to staff. Sorting is done by the Claude API, but every answer is checked, and if it's wrong the system falls back to simple rules. An **MCP server** lets an AI agent work with the tickets through a few safe actions, and an **n8n workflow** brings the messages in.
 
-![screenshot](docs/screenshot.png) <!-- TODO: add a screenshot of /docs or Claude Desktop using the tools -->
+![OrderDesk API sorting a complaint](docs/screenshot.png)
 
 ## Why I built it
 
-<!-- TODO: 2-3 sentences in your own words. E.g. at Don Burrito you processed online orders and saw complaints pile up during busy shifts, with no way to tell the urgent ones (allergens) from the small ones. What you wanted to learn: FastAPI, event sourcing, MCP, n8n. -->
+I worked at a restaurant that handled a lot of online orders, and complaints came in all the time, especially during busy shifts. A missing drink and an allergy problem landed in the same pile, and it was up to whoever had a free minute to sort them. I wanted to see how that could be handled better, with AI doing the sorting and a human stepping in when it matters.
 
-## Architecture
+I also wanted to learn how to give an AI agent access to a real system safely, and how to build a backend that keeps a full history of everything that happens. The same idea works for any support inbox, not just restaurants.
+
+## How it works
 
 ```
 customer msg ──> n8n webhook ──> POST /tickets ──> FastAPI ──> events table (PostgreSQL)
                                                         │
-                                                        └── triage: Claude API ─(validate)─> urgency/category
-                                                                        └─ fallback: rules
+                                                        └── triage: Claude API ─(check)─> urgency + category
+                                                                        └─ if invalid: keyword rules
 AI agent (Claude Desktop) ──> MCP server ──> OrderDesk API (only the actions listed as tools)
 ```
 
-## Design choices
+## Choices I made
 
-- **Event sourcing.** Tickets are never updated in place. Every change (`TicketCreated`, `TicketTriaged`, `StatusChanged`, `EscalatedToHuman`) is appended to an `events` table, and the current state is rebuilt by replaying them. This gives a full audit trail of what happened and when, which matters when an AI agent is acting on customer cases.
-- **LLM output is never trusted blindly.** The model must return JSON with allowed values only. Anything else (wrong value, chatty text, API error) falls back to rules, so the system keeps working on a bad day.
-- **No-op changes are not recorded.** Setting a status that is already set adds no event.
-- **Scoped agent access.** The MCP server exposes five tools and nothing else. The agent cannot delete tickets or touch the database directly.
-- **Tests do not depend on the network.** Without an API key, triage uses rules, so CI is fast and deterministic.
+- **Every change is saved as an event (event sourcing).** Tickets are never overwritten. Created, sorted, escalated, status changed: each one is added to an `events` table, and the current ticket is rebuilt by replaying them in order. That way you can always see what happened and when, which matters once an AI agent is touching customer cases.
+- **The AI's answer gets checked before it's used.** Claude has to reply with JSON using only the allowed values. A made-up value, chatty text or an API error means the keyword rules take over, so nothing breaks. Each ticket records whether the AI or the rules made the call.
+- **Rules are ordered by how serious the problem is.** The first match wins, so "I got someone else's order and I'm allergic to nuts" is treated as an allergy issue, not just a wrong order.
+- **The agent can only do five things.** It can list, read, update and escalate tickets, but it can't delete anything or touch the database.
+- **Tests don't need the internet.** Without an API key the rules are used, so the tests run fast and give the same result every time, locally and in GitHub Actions.
 
 ## API
 
 | Method | Path | What it does |
 |---|---|---|
-| POST | `/tickets` | Create a ticket from a customer message, triage it, escalate if urgent |
-| GET | `/tickets?status=open` | List tickets, optionally filtered by status |
+| POST | `/tickets` | Create a ticket from a customer message, sort it, escalate if urgent |
+| GET | `/tickets?status=open` | List tickets, optionally by status |
 | GET | `/tickets/{id}` | Current state of a ticket |
 | GET | `/tickets/{id}/history` | Every event for that ticket, in order |
 | POST | `/tickets/{id}/status` | Move to `open`, `in_progress` or `resolved` |
 | POST | `/tickets/{id}/escalate` | Hand to a human |
 
-Interactive docs at `http://localhost:8000/docs` once running.
+Once it's running, you can try everything at `http://localhost:8000/docs`.
 
 ## Run it
 
 ```bash
-docker compose up -d db                    # PostgreSQL
-python -m venv .venv && source .venv/bin/activate
+python3 -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
-export DATABASE_URL=postgresql+psycopg://orderdesk:orderdesk@localhost:5432/orderdesk
-export ANTHROPIC_API_KEY=...               # optional; without it triage uses rules
 uvicorn app.main:app --reload
 ```
 
-Tests: `pytest -v` (runs on SQLite, also runs in GitHub Actions on every push).
+This uses a local SQLite file by default. To use PostgreSQL instead:
+
+```bash
+docker compose up -d db
+export DATABASE_URL=postgresql+psycopg://orderdesk:orderdesk@localhost:5432/orderdesk
+```
+
+To sort with Claude instead of the rules, set `ANTHROPIC_API_KEY`.
+
+Tests: `pytest -v` (they also run in GitHub Actions on every push).
 
 ## MCP server (AI agent access)
 
-Add this to Claude Desktop's config (`claude_desktop_config.json`), with the API running:
+With the API running, add this to Claude Desktop's config (`claude_desktop_config.json`):
 
 ```json
 {
@@ -71,7 +79,7 @@ Add this to Claude Desktop's config (`claude_desktop_config.json`), with the API
 
 Tools: `list_open_tickets`, `get_ticket`, `get_ticket_history`, `update_status`, `escalate_to_human`.
 
-Then ask Claude: *"Which open tickets are urgent, and what happened on the latest one?"*
+Then ask Claude something like *"Which open tickets are urgent, and what happened on the latest one?"*
 
 ## n8n workflow
 
@@ -87,8 +95,9 @@ Webhook (customer message) → HTTP Request `POST /tickets` → IF `needs_human`
 1. Call get_ticket. If the order is more than 30 minutes past its delivery time, ...
 -->
 
-## Next steps
+## What I'd add next
 
-- A read model (projection) so listing tickets doesn't replay every event
-- A real `get_order` lookup against order data (items, delivery time, allergens)
-- Evaluation set of real-looking messages to measure triage accuracy
+- A separate table with each ticket's current state, so listing tickets doesn't replay every event
+- Recording *who* made each change (staff or AI agent)
+- Letting one ticket have more than one category (an allergy *and* a late order)
+- A set of realistic test messages to measure how accurate the sorting is
