@@ -84,3 +84,8 @@ def test_llm_output_is_validated_before_use():
     assert validate('{"urgency": "high", "category": "payment"}')["source"] == "llm"
     assert validate('{"urgency": "critical", "category": "payment"}') is None  # not an allowed value
     assert validate("Sure! Here is the JSON you asked for") is None  # not JSON
+
+def test_someone_elses_order_is_wrong_item():
+    ticket = create("I got someone else's order")
+    assert ticket["category"] == "missing_or_wrong_item"
+    assert ticket["urgency"] == "medium"

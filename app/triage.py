@@ -25,7 +25,7 @@ RULES = [
     # (keywords, category, urgency): checked in order, first match wins
     (("allergy", "allergic", "allergen", "nuts", "gluten", "vegan", "sick", "food poisoning"), "allergy_safety", "high"),
     (("never arrived", "not arrived", "hasn't arrived", "still waiting", "where is my order", "late"), "not_delivered", "high"),
-    (("missing", "forgot", "wrong order", "wrong item", "not what i ordered"), "missing_or_wrong_item", "medium"),
+    (("missing", "forgot", "wrong order", "wrong item", "not what i ordered", "someone else's", "someone elses", "not my order"), "missing_or_wrong_item", "medium"),
     (("cold", "soggy", "spilled", "burnt", "raw"), "quality", "medium"),
     (("charged twice", "double", "refund", "payment", "invoice", "overcharged"), "payment", "medium"),
 ]
