@@ -1,0 +1,4 @@
+__pycache__/n\*.db
+.venv/
+.env
+.pytest_cache

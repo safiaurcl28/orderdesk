@@ -1,0 +1,9 @@
+fastapi
+uvicorn
+sqlalchemy
+psycopg[binary]
+pydantic
+httpx
+anthropic
+mcp[cli]>=2
+pytest
