@@ -79,7 +79,7 @@ With the API running, add this to Claude Desktop's config (`claude_desktop_confi
 
 Tools: `list_open_tickets`, `get_ticket`, `get_ticket_history`, `update_status`, `escalate_to_human`.
 
-Then ask Claude something like *"Which open tickets are urgent, and what happened on the latest one?"*
+Then ask Claude something like *"Which open tickets are urgent, and what happened on the latest one?"* ![Claude using the OrderDesk tools](docs/mcp.png)
 
 ## n8n workflow
 
@@ -91,9 +91,22 @@ Webhook (customer message) → HTTP Request `POST /tickets` → IF `needs_human`
 
 ## Agent procedure: "My order never arrived"
 
-<!-- TODO: write ~10 if-then steps the agent follows, using the MCP tools. Example start:
-1. Call get_ticket. If the order is more than 30 minutes past its delivery time, ...
--->
+## Agent procedure: "My order never arrived"
+
+1. Call `get_ticket` to read the message and order id.
+2. Call `get_ticket_history`. If the ticket was already escalated, don't escalate again;
+   tell the customer a staff member is on it.
+3. Check whether the order is still in progress (being prepared or out for delivery).
+4. If it is still in progress and less than 30 minutes late: apologise, give an updated
+   delivery estimate, and set the status to `in_progress`.
+5. If it is not in progress, or the order can't be found: call `escalate_to_human`.
+   Don't guess or promise anything.
+6. If it is more than 30 minutes late: escalate, even if it is still on its way.
+7. If the customer mentions an allergy or feeling unwell: escalate immediately,
+   whatever the delivery status.
+8. Never offer refunds or vouchers yourself; only staff can.
+9. When staff confirm it's solved, set the status to `resolved`.
+10. If anything is unclear, ask the customer one short question, or escalate.
 
 ## What I'd add next
 
