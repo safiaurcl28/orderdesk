@@ -54,7 +54,7 @@ uvicorn app.main:app --reload
 This uses a local SQLite file by default. To use PostgreSQL instead:
 
 ```bash
-docker compose up -d db
+docker compose up -d db        # or install PostgreSQL directly, e.g. sudo apt install postgresql
 export DATABASE_URL=postgresql+psycopg://orderdesk:orderdesk@localhost:5432/orderdesk
 ```
 
@@ -79,19 +79,23 @@ With the API running, add this to Claude Desktop's config (`claude_desktop_confi
 
 Tools: `list_open_tickets`, `get_ticket`, `get_ticket_history`, `update_status`, `escalate_to_human`.
 
-Then ask Claude something like *"Which open tickets are urgent, and what happened on the latest one?"* ![Claude using the OrderDesk tools](docs/mcp.png)
+On Windows with the project in WSL, use `"command": "wsl.exe"` and put `-e`, the venv's python path and the server path in `args`.
+
+Then ask Claude something like *"Which open tickets are urgent, and what happened on the latest one?"* In my test, the agent read a ticket's history, saw it had already been escalated, and chose not to escalate it again.
+
+![Claude using the OrderDesk tools](docs/mcp.png)
 
 ## n8n workflow
 
-`docker compose up -d n8n`, open `http://localhost:5678`, and import `n8n/workflow.json`.
+Start n8n with `npx n8n` (or `docker compose up -d n8n`), open `http://localhost:5678`, and import `n8n/workflow.json`. In the HTTP Request node, use `127.0.0.1` instead of `localhost`, since newer Node versions try IPv6 first and the API listens on IPv4.
 
-Webhook (customer message) → HTTP Request `POST /tickets` → IF `needs_human` is true → notify staff / else → automatic reply to the customer.
+Webhook (customer message) → HTTP Request `POST /tickets` → IF `needs_human` is true → tell the customer staff are on it / else → automatic reply.
 
-   ![n8n workflow](docs/n8n.png)
-
-## Agent procedure: "My order never arrived"
+![n8n workflow](docs/n8n.png)
 
 ## Agent procedure: "My order never arrived"
+
+The steps an AI agent follows for this complaint, using the MCP tools:
 
 1. Call `get_ticket` to read the message and order id.
 2. Call `get_ticket_history`. If the ticket was already escalated, don't escalate again;
@@ -108,9 +112,12 @@ Webhook (customer message) → HTTP Request `POST /tickets` → IF `needs_human`
 9. When staff confirm it's solved, set the status to `resolved`.
 10. If anything is unclear, ask the customer one short question, or escalate.
 
+Step 3 assumes an order lookup tool (`get_order`), which is next on the list below.
+
 ## What I'd add next
 
 - A separate table with each ticket's current state, so listing tickets doesn't replay every event
 - Recording *who* made each change (staff or AI agent)
 - Letting one ticket have more than one category (an allergy *and* a late order)
+- A `get_order` tool so the agent can check delivery status itself
 - A set of realistic test messages to measure how accurate the sorting is
