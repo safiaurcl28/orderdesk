@@ -87,7 +87,7 @@ Then ask Claude something like *"Which open tickets are urgent, and what happene
 
 Webhook (customer message) → HTTP Request `POST /tickets` → IF `needs_human` is true → notify staff / else → automatic reply to the customer.
 
-<!-- TODO: build this in n8n, then export it to n8n/workflow.json -->
+   ![n8n workflow](docs/n8n.png)
 
 ## Agent procedure: "My order never arrived"
 
